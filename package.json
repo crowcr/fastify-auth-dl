@@ -1,0 +1,25 @@
+{
+  "name": "fastify-auth-dl",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "ts-node-dev src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "wamo <ainznino@pm.me>",
+  "license": "MIT",
+  "dependencies": {
+    "@fastify/static": "^6.11.2",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.24.1",
+    "firebase-admin": "^11.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.6",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.2.2"
+  }
+}

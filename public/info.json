@@ -1,0 +1,17 @@
+[
+  {
+    "id": "dotdash",
+    "name": "DotDash",
+    "description": "モールス信号でできるタイピングゲーム",
+    "image_url": "",
+    "latest": "v1.0",
+    "shop_url": "https://ja1ykl.com/shop/dotdash",
+    "changelog": [
+      {
+        "version": "v1.0",
+        "date": "2023/10/28",
+        "description": "公開"
+      }
+    ]
+  }
+]
