@@ -45,18 +45,34 @@ fastify.get<{
 }>('/game/:gameId/dl', async function (request, reply) {
   const { gameId } = request.params;
   const { os, accessToken } = request.query;
-  const verifyRes = await getAuth()
-    .verifyIdToken(accessToken)
-  const querySnapshot = await db.collection("serialCodes").where("userId", "==", verifyRes.user_id);
-  if (querySnapshot) {
-    querySnapshot.get().then((querySnapshot) => {
-      querySnapshot.forEach((doc) => {
-        db.collection("serialCodes").doc(doc.id).update({
-          call: FieldValue.increment(1)
-        })
-      });
-    })
-    reply.sendFile(`games/${gameId}-${os}-latest.zip`)
+  try {
+    const verifyRes = await getAuth()
+      .verifyIdToken(accessToken)
+    const querySnapshot = await db.collection("serialCodes").where("userId", "==", verifyRes.user_id);
+    if (querySnapshot) {
+      querySnapshot.get().then((querySnapshot) => {
+        querySnapshot.forEach((doc) => {
+          if (gameId === doc.data().game) {
+            db.collection("serialCodes").doc(doc.id).update({
+              call: FieldValue.increment(1)
+            })
+          } else {
+            reply.code(403)
+              .header('Content-Type', 'application/json; charset=utf-8')
+              .send({ error: 'This license does not include specified game.' })
+          }
+        });
+      })
+      reply.sendFile(`games/${gameId}-${os}-latest.zip`)
+    } else {
+      reply.code(404)
+        .header('Content-Type', 'application/json; charset=utf-8')
+        .send({ error: 'License Not Found' })
+    }
+  } catch (e) {
+    reply.code(401)
+      .header('Content-Type', 'application/json; charset=utf-8')
+      .send({ error: 'Invalid License' })
   }
 })
 
