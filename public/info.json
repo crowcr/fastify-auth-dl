@@ -5,6 +5,7 @@
     "description": "モールス信号でできるタイピングゲーム",
     "image_url": "",
     "latest": "v1.0",
+    "supported_os": ["windows", "mac", "linux"],
     "shop_url": "https://ja1ykl.com/shop/dotdash",
     "changelog": [
       {
