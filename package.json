@@ -12,6 +12,7 @@
   "author": "wamo <ainznino@pm.me>",
   "license": "MIT",
   "dependencies": {
+    "@fastify/cors": "^8.4.0",
     "@fastify/static": "^6.11.2",
     "dotenv": "^16.3.1",
     "fastify": "^4.24.1",
