@@ -5,6 +5,7 @@ import 'dotenv/config'
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import fs from "fs";
 
 const fastify = Fastify()
 
@@ -64,9 +65,11 @@ fastify.get<{
         });
       })
       if (os === "mac") {
-        reply.sendFile(`games/${gameId}-${os}-latest.dmg`)
+        const stream = fs.createReadStream(`../public/games/${gameId}-${os}-latest.dmg`)
+        reply.type('application/octet-stream').send(stream)
       } else {
-        reply.sendFile(`games/${gameId}-${os}-latest.zip`)
+        const stream = fs.createReadStream(`../public/games/${gameId}-${os}-latest.zip`)
+        reply.type('application/zip').send(stream)
       }
     } else {
       reply.code(404)
