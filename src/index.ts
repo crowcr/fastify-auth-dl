@@ -63,7 +63,11 @@ fastify.get<{
           }
         });
       })
-      reply.sendFile(`games/${gameId}-${os}-latest.zip`)
+      if (os === "mac") {
+        reply.sendFile(`games/${gameId}-${os}-latest.dmg`)
+      } else {
+        reply.sendFile(`games/${gameId}-${os}-latest.zip`)
+      }
     } else {
       reply.code(404)
         .header('Content-Type', 'application/json; charset=utf-8')
