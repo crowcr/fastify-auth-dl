@@ -1,13 +1,11 @@
 import Fastify from 'fastify'
-import fastifyStatic from '@fastify/static'
 import fastifyCors from '@fastify/cors'
-import path from 'path'
 import 'dotenv/config'
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
-import fs from "fs";
-import crypto from "crypto";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 
 interface Changelog {
@@ -42,11 +40,14 @@ const app = initializeApp({
 
 const db = getFirestore();
 
-fastify.register(fastifyStatic, {
-  root: path.join(__dirname, '..', 'public'),
-  prefix: '/public/',
-  constraints: { host: 'files.ja1ykl.com' }
-})
+const s3Client = new S3Client({
+  region: "auto",
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+  },
+});
 
 fastify.register(fastifyCors, {
   exposedHeaders: 'Content-Disposition'
@@ -80,36 +81,57 @@ fastify.get<{
 }>('/game/:gameId/dl', async function (request, reply) {
   const { gameId } = request.params;
   const { os, accessToken } = request.query;
-    const verifyRes = await getAuth()
-      .verifyIdToken(accessToken)
-    const querySnapshot = await db.collection("serialCodes").where("userId", "==", verifyRes.user_id);
-    if (querySnapshot) {
-      querySnapshot.get().then((querySnapshot) => {
-        querySnapshot.forEach((doc) => {
-          if (gameId === doc.data().game) {
+
+  try {
+    const verifyRes = await getAuth().verifyIdToken(accessToken);
+    const serialCodesRef = db.collection("serialCodes").where("userId", "==", verifyRes.user_id);
+    const querySnapshot = await serialCodesRef.get();
+
+    if (!querySnapshot.empty) {
+      let hasLicense = false;
+      const updatePromises: Promise<any>[] = [];
+
+      querySnapshot.forEach((doc) => {
+        if (gameId === doc.data().game) {
+          hasLicense = true;
+          updatePromises.push(
             db.collection("serialCodes").doc(doc.id).update({
               call: FieldValue.increment(1)
             })
-          } else {
-            reply.code(403)
-              .header('Content-Type', 'application/json; charset=utf-8')
-              .send({ error: 'This license does not include specified game.' })
-          }
-        });
-      })
-      const currentDir = process.cwd()
-      if (os === "mac") {
-        const stream = fs.readFileSync(path.join(currentDir, `public/games/${gameId}-${os}-latest.dmg`))
-        reply.header('Content-disposition', 'attachment; filename=' + `${gameId}-${os}-latest.dmg`).send(stream)
-      } else {
-        const stream = fs.readFileSync(path.join(currentDir, `public/games/${gameId}-${os}-latest.zip`))
-        reply.header('Content-disposition', 'attachment; filename=' + `${gameId}-${os}-latest.zip`).send(stream)
+          );
+        }
+      });
+
+      if (!hasLicense) {
+        return reply.code(403)
+          .header('Content-Type', 'application/json; charset=utf-8')
+          .send({ error: 'This license does not include specified game.' });
       }
+
+      await Promise.all(updatePromises);
+
+      // Cloudflare R2 から署名付きURLを生成
+      const ext = os === "mac" ? "dmg" : "zip";
+      const fileKey = `games/${gameId}-${os}-latest.${ext}`;
+
+      const command = new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: fileKey,
+      });
+
+      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+      return reply.redirect(signedUrl);
     } else {
-      reply.code(404)
+      return reply.code(404)
         .header('Content-Type', 'application/json; charset=utf-8')
-        .send({ error: 'License Not Found' })
+        .send({ error: 'License Not Found' });
     }
+  } catch (error) {
+    fastify.log.error(error);
+    return reply.code(500)
+      .header('Content-Type', 'application/json; charset=utf-8')
+      .send({ error: 'Internal Server Error' });
+  }
 })
 
 fastify.listen({ port: 3344 }, function (err, address) {
