@@ -8,6 +8,24 @@ import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
 
+interface Changelog {
+  version: string;
+  date: string;
+  description: string;
+}
+
+interface Game {
+  id: string;
+  name: string;
+  description: string;
+  manual_url: string;
+  image_url: string;
+  latest: string;
+  supported_os: string[];
+  shop_url: string;
+  changelog: Changelog[];
+}
+
 const fastify = Fastify({logger: true})
 
 const certConfig = {
@@ -36,8 +54,17 @@ fastify.get('/', function (request, reply) {
   reply.send({ message: "You have to login at https://dl.ja1ykl.com" })
 })
 
-fastify.get('/game/info', function (request, reply) {
-  reply.sendFile('info.json')
+fastify.get('/game/info', async function (request, reply) {
+  const querySnapshot = await db.collection("games").get();
+  const games: Game[] = [];
+  querySnapshot.forEach((doc) => {
+    const data = doc.data() as Omit<Game, 'id'>;
+    games.push({
+      id: doc.id,
+      ...data
+    });
+  });
+  reply.send(games);
 })
 
 fastify.get<{
