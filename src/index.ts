@@ -7,6 +7,8 @@ import { initializeApp, cert } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
+import crypto from "crypto";
+
 
 interface Changelog {
   version: string;
@@ -65,6 +67,77 @@ fastify.get('/game/info', async function (request, reply) {
     });
   });
   reply.send(games);
+})
+
+fastify.post<{
+  Params: {
+    gameId: string
+  }
+  Body: {
+    count?: number
+  }
+}>('/game/:gameId/serial', async function (request, reply) {
+  const adminApiKey = process.env.ADMIN_API_KEY;
+  if (!adminApiKey) {
+    return reply.code(500).send({ error: 'ADMIN_API_KEY environment variable is not set on the server.' });
+  }
+
+  const apiKey = request.headers['x-api-key'] || request.headers['authorization']?.toString().replace(/^Bearer\s+/i, '');
+  if (apiKey !== adminApiKey) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+
+  const { gameId } = request.params;
+  const count = request.body?.count ?? 1;
+
+  if (typeof count !== 'number' || count <= 0 || count > 100) {
+    return reply.code(400).send({ error: 'Count must be a number between 1 and 100.' });
+  }
+
+  // Check if game exists
+  const gameDoc = await db.collection("games").doc(gameId).get();
+  if (!gameDoc.exists) {
+    return reply.code(404).send({ error: `Game '${gameId}' not found.` });
+  }
+
+  const querySnapshot = await db.collection("serialCodes").get();
+  const serialCodes = querySnapshot.docs.map((doc) => doc.data().serialCode);
+  const localSerialCodes = [...serialCodes];
+
+  const generatedCodes: string[] = [];
+  const S = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+  for (let i = 0; i < count; i++) {
+    let serialCode = "";
+    while (true) {
+      let tempCode = "";
+      for (let j = 0; j < 4; j++) {
+        const randomBytes = crypto.randomBytes(4);
+        tempCode += Array.from(randomBytes)
+          .map((n) => S[n % S.length])
+          .join("");
+        if (j < 3) {
+          tempCode += "-";
+        }
+      }
+      if (!localSerialCodes.includes(tempCode)) {
+        serialCode = tempCode;
+        break;
+      }
+    }
+    localSerialCodes.push(serialCode);
+    generatedCodes.push(serialCode);
+
+    const docId = crypto.createHash("md5").update(serialCode).digest("hex");
+    await db.collection("serialCodes").doc(docId).set({
+      call: 0,
+      serialCode: serialCode,
+      game: gameId,
+      userId: docId,
+    });
+  }
+
+  reply.send({ serialCodes: generatedCodes });
 })
 
 fastify.get<{
