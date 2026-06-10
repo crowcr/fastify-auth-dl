@@ -84,48 +84,54 @@ fastify.get<{
 
   try {
     const verifyRes = await getAuth().verifyIdToken(accessToken);
-    const serialCodesRef = db.collection("serialCodes").where("userId", "==", verifyRes.user_id);
-    const querySnapshot = await serialCodesRef.get();
+    const isAdmin = !!verifyRes.admin;
 
-    if (!querySnapshot.empty) {
-      let hasLicense = false;
-      const updatePromises: Promise<any>[] = [];
+    let hasLicense = isAdmin;
+    const updatePromises: Promise<any>[] = [];
 
-      querySnapshot.forEach((doc) => {
-        if (gameId === doc.data().game) {
-          hasLicense = true;
-          updatePromises.push(
-            db.collection("serialCodes").doc(doc.id).update({
-              call: FieldValue.increment(1)
-            })
-          );
-        }
-      });
+    if (!isAdmin) {
+      const serialCodesRef = db.collection("serialCodes").where("userId", "==", verifyRes.user_id);
+      const querySnapshot = await serialCodesRef.get();
 
-      if (!hasLicense) {
-        return reply.code(403)
+      if (!querySnapshot.empty) {
+        querySnapshot.forEach((doc) => {
+          if (gameId === doc.data().game) {
+            hasLicense = true;
+            updatePromises.push(
+              db.collection("serialCodes").doc(doc.id).update({
+                call: FieldValue.increment(1)
+              })
+            );
+          }
+        });
+      } else {
+        return reply.code(404)
           .header('Content-Type', 'application/json; charset=utf-8')
-          .send({ error: 'This license does not include specified game.' });
+          .send({ error: 'License Not Found' });
       }
-
-      await Promise.all(updatePromises);
-
-      // Cloudflare R2 から署名付きURLを生成
-      const ext = os === "mac" ? "dmg" : "zip";
-      const fileKey = `games/${gameId}-${os}-latest.${ext}`;
-
-      const command = new GetObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: fileKey,
-      });
-
-      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
-      return reply.redirect(signedUrl);
-    } else {
-      return reply.code(404)
-        .header('Content-Type', 'application/json; charset=utf-8')
-        .send({ error: 'License Not Found' });
     }
+
+    if (!hasLicense) {
+      return reply.code(403)
+        .header('Content-Type', 'application/json; charset=utf-8')
+        .send({ error: 'This license does not include specified game.' });
+    }
+
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+    }
+
+    // Cloudflare R2 から署名付きURLを生成
+    const ext = os === "mac" ? "dmg" : "zip";
+    const fileKey = `games/${gameId}-${os}-latest.${ext}`;
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: fileKey,
+    });
+
+    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+    return reply.redirect(signedUrl);
   } catch (error) {
     fastify.log.error(error);
     return reply.code(500)
